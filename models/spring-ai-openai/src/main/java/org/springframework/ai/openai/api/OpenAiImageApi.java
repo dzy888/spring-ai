@@ -17,8 +17,8 @@
 package org.springframework.ai.openai.api;
 
 import java.util.List;
-import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -27,10 +27,10 @@ import org.springframework.ai.model.NoopApiKey;
 import org.springframework.ai.model.SimpleApiKey;
 import org.springframework.ai.openai.api.common.OpenAiApiConstants;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.Assert;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.ResponseErrorHandler;
@@ -40,6 +40,8 @@ import org.springframework.web.client.RestClient;
  * OpenAI Image API.
  *
  * @see <a href= "https://platform.openai.com/docs/api-reference/images">Images</a>
+ * @author lambochen
+ * @author Filip Hrisafov
  */
 public class OpenAiImageApi {
 
@@ -47,79 +49,37 @@ public class OpenAiImageApi {
 
 	private final RestClient restClient;
 
-	/**
-	 * Create a new OpenAI Image api with base URL set to {@code https://api.openai.com}.
-	 * @param openAiToken OpenAI apiKey.
-	 * @deprecated use {@link Builder} instead.
-	 */
-	@Deprecated(forRemoval = true, since = "1.0.0-M6")
-	public OpenAiImageApi(String openAiToken) {
-		this(OpenAiApiConstants.DEFAULT_BASE_URL, openAiToken, RestClient.builder());
-	}
-
-	/**
-	 * Create a new OpenAI Image API with the provided base URL.
-	 * @param baseUrl the base URL for the OpenAI API.
-	 * @param openAiToken OpenAI apiKey.
-	 * @deprecated use {@link Builder} instead.
-	 */
-	@Deprecated(forRemoval = true, since = "1.0.0-M6")
-	public OpenAiImageApi(String baseUrl, String openAiToken, RestClient.Builder restClientBuilder) {
-		this(baseUrl, openAiToken, restClientBuilder, RetryUtils.DEFAULT_RESPONSE_ERROR_HANDLER);
-	}
-
-	/**
-	 * Create a new OpenAI Image API with the provided base URL.
-	 * @param baseUrl the base URL for the OpenAI API.
-	 * @param apiKey OpenAI apiKey.
-	 * @param restClientBuilder the rest client builder to use.
-	 * @deprecated use {@link Builder} instead.
-	 */
-	@Deprecated(forRemoval = true, since = "1.0.0-M6")
-	public OpenAiImageApi(String baseUrl, String apiKey, RestClient.Builder restClientBuilder,
-			ResponseErrorHandler responseErrorHandler) {
-		this(baseUrl, apiKey, CollectionUtils.toMultiValueMap(Map.of()), restClientBuilder, responseErrorHandler);
-	}
+	private final String imagesPath;
 
 	/**
 	 * Create a new OpenAI Image API with the provided base URL.
 	 * @param baseUrl the base URL for the OpenAI API.
 	 * @param apiKey OpenAI apiKey.
 	 * @param headers the http headers to use.
-	 * @param restClientBuilder the rest client builder to use.
-	 * @param responseErrorHandler the response error handler to use.
-	 * @deprecated use {@link Builder} instead.
-	 */
-	@Deprecated(forRemoval = true, since = "1.0.0-M6")
-	public OpenAiImageApi(String baseUrl, String apiKey, MultiValueMap<String, String> headers,
-			RestClient.Builder restClientBuilder, ResponseErrorHandler responseErrorHandler) {
-
-		this(baseUrl, new SimpleApiKey(apiKey), headers, restClientBuilder, responseErrorHandler);
-	}
-
-	/**
-	 * Create a new OpenAI Image API with the provided base URL.
-	 * @param baseUrl the base URL for the OpenAI API.
-	 * @param apiKey OpenAI apiKey.
-	 * @param headers the http headers to use.
+	 * @param imagesPath the images path to use.
 	 * @param restClientBuilder the rest client builder to use.
 	 * @param responseErrorHandler the response error handler to use.
 	 */
-	public OpenAiImageApi(String baseUrl, ApiKey apiKey, MultiValueMap<String, String> headers,
+	public OpenAiImageApi(String baseUrl, ApiKey apiKey, MultiValueMap<String, String> headers, String imagesPath,
 			RestClient.Builder restClientBuilder, ResponseErrorHandler responseErrorHandler) {
 
 		// @formatter:off
-		this.restClient = restClientBuilder.baseUrl(baseUrl)
+		this.restClient = restClientBuilder.clone()
+			.baseUrl(baseUrl)
 			.defaultHeaders(h -> {
-				if(!(apiKey instanceof NoopApiKey)) {
-					h.setBearerAuth(apiKey.getValue());
-				}
 				h.setContentType(MediaType.APPLICATION_JSON);
 				h.addAll(headers);
 			})
 			.defaultStatusHandler(responseErrorHandler)
+			.defaultRequest(requestHeadersSpec -> {
+				if (!(apiKey instanceof NoopApiKey)) {
+					requestHeadersSpec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey.getValue());
+				}
+			})
 			.build();
 		// @formatter:on
+
+		this.imagesPath = imagesPath;
 	}
 
 	public ResponseEntity<OpenAiImageResponse> createImage(OpenAiImageRequest openAiImageRequest) {
@@ -127,10 +87,14 @@ public class OpenAiImageApi {
 		Assert.hasLength(openAiImageRequest.prompt(), "Prompt cannot be empty.");
 
 		return this.restClient.post()
-			.uri("v1/images/generations")
+			.uri(this.imagesPath)
 			.body(openAiImageRequest)
 			.retrieve()
 			.toEntity(OpenAiImageResponse.class);
+	}
+
+	public static Builder builder() {
+		return new Builder();
 	}
 
 	/**
@@ -181,20 +145,18 @@ public class OpenAiImageApi {
 	}
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record OpenAiImageResponse(
 		@JsonProperty("created") Long created,
 		@JsonProperty("data") List<Data> data) {
 	}
-	// @formatter:onn
+	// @formatter:on
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record Data(@JsonProperty("url") String url, @JsonProperty("b64_json") String b64Json,
 			@JsonProperty("revised_prompt") String revisedPrompt) {
 
-	}
-
-	public static Builder builder() {
-		return new Builder();
 	}
 
 	/**
@@ -212,9 +174,17 @@ public class OpenAiImageApi {
 
 		private ResponseErrorHandler responseErrorHandler = RetryUtils.DEFAULT_RESPONSE_ERROR_HANDLER;
 
+		private String imagesPath = "v1/images/generations";
+
 		public Builder baseUrl(String baseUrl) {
 			Assert.hasText(baseUrl, "baseUrl cannot be null or empty");
 			this.baseUrl = baseUrl;
+			return this;
+		}
+
+		public Builder imagesPath(String imagesPath) {
+			Assert.hasText(imagesPath, "imagesPath cannot be null or empty");
+			this.imagesPath = imagesPath;
 			return this;
 		}
 
@@ -250,7 +220,7 @@ public class OpenAiImageApi {
 
 		public OpenAiImageApi build() {
 			Assert.notNull(this.apiKey, "apiKey must be set");
-			return new OpenAiImageApi(this.baseUrl, this.apiKey, this.headers, this.restClientBuilder,
+			return new OpenAiImageApi(this.baseUrl, this.apiKey, this.headers, this.imagesPath, this.restClientBuilder,
 					this.responseErrorHandler);
 		}
 

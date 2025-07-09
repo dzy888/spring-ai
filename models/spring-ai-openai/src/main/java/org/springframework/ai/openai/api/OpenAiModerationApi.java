@@ -16,6 +16,7 @@
 
 package org.springframework.ai.openai.api;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -26,6 +27,7 @@ import org.springframework.ai.model.NoopApiKey;
 import org.springframework.ai.model.SimpleApiKey;
 import org.springframework.ai.openai.api.common.OpenAiApiConstants;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.Assert;
@@ -39,6 +41,7 @@ import org.springframework.web.client.RestClient;
  *
  * @author Ahmed Yousri
  * @author Ilayaperumal Gopinathan
+ * @author Filip Hrisafov
  * @see <a href=
  * "https://platform.openai.com/docs/api-reference/moderations">https://platform.openai.com/docs/api-reference/moderations</a>
  */
@@ -53,33 +56,6 @@ public class OpenAiModerationApi {
 	private final ObjectMapper objectMapper;
 
 	/**
-	 * Create a new OpenAI Moderation api with base URL set to https://api.openai.com
-	 * @param openAiToken OpenAI apiKey.
-	 * @deprecated use {@link Builder} instead.
-	 */
-	@Deprecated(forRemoval = true, since = "1.0.0-M6")
-	public OpenAiModerationApi(String openAiToken) {
-		this(DEFAULT_BASE_URL, openAiToken, RestClient.builder(), RetryUtils.DEFAULT_RESPONSE_ERROR_HANDLER);
-	}
-
-	/**
-	 * @deprecated use {@link Builder} instead.
-	 */
-	@Deprecated(forRemoval = true, since = "1.0.0-M6")
-	public OpenAiModerationApi(String baseUrl, String openAiToken, RestClient.Builder restClientBuilder,
-			ResponseErrorHandler responseErrorHandler) {
-
-		this.objectMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-		this.restClient = restClientBuilder.baseUrl(baseUrl).defaultHeaders(h -> {
-			if (openAiToken != null && !openAiToken.isEmpty()) {
-				h.setBearerAuth(openAiToken);
-			}
-			h.setContentType(MediaType.APPLICATION_JSON);
-		}).defaultStatusHandler(responseErrorHandler).build();
-	}
-
-	/**
 	 * Create a new OpenAI Moderation API with the provided base URL.
 	 * @param baseUrl the base URL for the OpenAI API.
 	 * @param apiKey OpenAI apiKey.
@@ -90,13 +66,20 @@ public class OpenAiModerationApi {
 
 		this.objectMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-		this.restClient = restClientBuilder.baseUrl(baseUrl).defaultHeaders(h -> {
-			if (!(apiKey instanceof NoopApiKey)) {
-				h.setBearerAuth(apiKey.getValue());
-			}
-			h.setContentType(MediaType.APPLICATION_JSON);
-			h.addAll(headers);
-		}).defaultStatusHandler(responseErrorHandler).build();
+		// @formatter:off
+		this.restClient = restClientBuilder.clone()
+			.baseUrl(baseUrl)
+			.defaultHeaders(h -> {
+				h.setContentType(MediaType.APPLICATION_JSON);
+				h.addAll(headers);
+			})
+			.defaultStatusHandler(responseErrorHandler)
+			.defaultRequest(requestHeadersSpec -> {
+				if (!(apiKey instanceof NoopApiKey)) {
+					requestHeadersSpec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey.getValue());
+				}
+			})
+			.build(); // @formatter:on
 	}
 
 	public ResponseEntity<OpenAiModerationResponse> createModeration(OpenAiModerationRequest openAiModerationRequest) {
@@ -108,6 +91,10 @@ public class OpenAiModerationApi {
 			.body(openAiModerationRequest)
 			.retrieve()
 			.toEntity(OpenAiModerationResponse.class);
+	}
+
+	public static Builder builder() {
+		return new Builder();
 	}
 
 	// @formatter:off
@@ -123,6 +110,7 @@ public class OpenAiModerationApi {
 	}
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record OpenAiModerationResponse(
 			@JsonProperty("id") String id,
 			@JsonProperty("model") String model,
@@ -131,6 +119,7 @@ public class OpenAiModerationApi {
 	}
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record OpenAiModerationResult(
 			@JsonProperty("flagged") boolean flagged,
 			@JsonProperty("categories") Categories categories,
@@ -139,6 +128,7 @@ public class OpenAiModerationApi {
 	}
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record Categories(
 			@JsonProperty("sexual") boolean sexual,
 			@JsonProperty("hate") boolean hate,
@@ -154,6 +144,8 @@ public class OpenAiModerationApi {
 
 	}
 
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record CategoryScores(
 			@JsonProperty("sexual") double sexual,
 			@JsonProperty("hate") double hate,
@@ -168,16 +160,13 @@ public class OpenAiModerationApi {
 			@JsonProperty("violence") double violence) {
 
 	}
-	// @formatter:onn
+	// @formatter:on
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record Data(@JsonProperty("url") String url, @JsonProperty("b64_json") String b64Json,
 			@JsonProperty("revised_prompt") String revisedPrompt) {
 
-	}
-
-	public static Builder builder() {
-		return new Builder();
 	}
 
 	/**

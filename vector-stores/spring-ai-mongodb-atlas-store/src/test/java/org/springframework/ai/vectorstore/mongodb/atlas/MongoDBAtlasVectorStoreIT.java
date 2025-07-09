@@ -345,12 +345,12 @@ class MongoDBAtlasVectorStoreIT extends BaseVectorStoreTests {
 
 		@Bean
 		public EmbeddingModel embeddingModel() {
-			return new OpenAiEmbeddingModel(new OpenAiApi(System.getenv("OPENAI_API_KEY")));
+			return new OpenAiEmbeddingModel(OpenAiApi.builder().apiKey(System.getenv("OPENAI_API_KEY")).build());
 		}
 
 		@Bean
 		public Converter<MimeType, String> mimeTypeToStringConverter() {
-			return new Converter<MimeType, String>() {
+			return new Converter<>() {
 
 				@Override
 				public String convert(MimeType source) {
@@ -361,7 +361,7 @@ class MongoDBAtlasVectorStoreIT extends BaseVectorStoreTests {
 
 		@Bean
 		public Converter<String, MimeType> stringToMimeTypeConverter() {
-			return new Converter<String, MimeType>() {
+			return new Converter<>() {
 
 				@Override
 				public MimeType convert(String source) {
